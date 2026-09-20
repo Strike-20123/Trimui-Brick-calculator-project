@@ -9,7 +9,7 @@
 #   ./calculator-host
 
 ifeq ($(strip $(CC)),)
-CC := aarch64-linux-gnu-gcc
+override CC := aarch64-linux-gnu-gcc
 endif
 
 SDL2_CFLAGS := $(shell pkg-config --cflags sdl2 SDL2_ttf 2>/dev/null || sdl2-config --cflags)
