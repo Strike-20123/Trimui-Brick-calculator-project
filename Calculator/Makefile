@@ -8,12 +8,9 @@
 #   make host
 #   ./calculator-host
 
-ifeq ($(strip $(CC)),)
-override CC := aarch64-linux-gnu-gcc
-endif
-
+CC ?= gcc
 SDL2_CFLAGS := $(shell pkg-config --cflags sdl2 SDL2_ttf 2>/dev/null || sdl2-config --cflags)
-SDL2_LIBS   := $(shell pkg-config --libs sdl2 SDL2_ttf 2>/dev/null || sdl2-config --libs) -lSDL2_ttf -lm
+SDL2_LIBS   := $(shell pkg-config --libs sdl2 SDL2_ttf 2>/dev/null || sdl2-config --libs) -lm
 
 SRC := src/main.c
 BIN := calculator
