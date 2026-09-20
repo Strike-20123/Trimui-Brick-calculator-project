@@ -8,7 +8,10 @@
 #   make host
 #   ./calculator-host
 
-CC ?= aarch64-linux-gnu-gcc
+ifeq ($(strip $(CC)),)
+CC := aarch64-linux-gnu-gcc
+endif
+
 SDL2_CFLAGS := $(shell pkg-config --cflags sdl2 SDL2_ttf 2>/dev/null || sdl2-config --cflags)
 SDL2_LIBS   := $(shell pkg-config --libs sdl2 SDL2_ttf 2>/dev/null || sdl2-config --libs) -lSDL2_ttf -lm
 
