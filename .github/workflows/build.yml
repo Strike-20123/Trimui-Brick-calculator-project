@@ -25,14 +25,36 @@ jobs:
 
       - name: Cross-compile the calculator
         run: |
+          set -e
           docker run --rm -v "${{ github.workspace }}/toolchain/workspace:/root/workspace" \
-            tg5040-toolchain bash -lc 'cd ~/workspace/Calculator && make CC="$CC"'
+            tg5040-toolchain bash -lc '
+              set -e
+              # Pick up whatever env an interactive shell in this image would normally set
+              for f in ~/.bashrc ~/.bash_profile /setup-env.sh /root/setup-env.sh /opt/setup-env.sh; do
+                [ -f "$f" ] && . "$f"
+              done
+              echo "--- Before fallback: CC=$CC ---"
+              if ! command -v "$CC" >/dev/null 2>&1; then
+                CC=$(compgen -c | grep -im1 -- "-gcc$" || true)
+              fi
+              echo "--- Using CC=$CC ---"
+              if [ -z "$CC" ]; then
+                echo "Could not find any cross compiler. PATH was: $PATH"
+                exit 1
+              fi
+              cd /root/workspace/Calculator
+              make CC="$CC"
+              test -f calculator || { echo "make finished but no calculator binary was produced"; exit 1; }
+              file calculator
+            '
 
       - name: Confirm we produced an aarch64 binary
-        run: file toolchain/workspace/Calculator/calculator
+        run: |
+          test -f toolchain/workspace/Calculator/calculator
+          file toolchain/workspace/Calculator/calculator
 
       - name: Upload the finished app folder
         uses: actions/upload-artifact@v4
-        with:
+        with:c
           name: Calculator
           path: toolchain/workspace/Calculator/
