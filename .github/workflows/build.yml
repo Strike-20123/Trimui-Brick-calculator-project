@@ -29,17 +29,28 @@ jobs:
           docker run --rm -v "${{ github.workspace }}/toolchain/workspace:/root/workspace" \
             tg5040-toolchain bash -lc '
               set -e
-              # Pick up whatever env an interactive shell in this image would normally set
               for f in ~/.bashrc ~/.bash_profile /setup-env.sh /root/setup-env.sh /opt/setup-env.sh; do
                 [ -f "$f" ] && . "$f"
               done
-              echo "--- Before fallback: CC=$CC ---"
-              if ! command -v "$CC" >/dev/null 2>&1; then
-                CC=$(compgen -c | grep -im1 -- "-gcc$" || true)
-              fi
-              echo "--- Using CC=$CC ---"
+              echo "--- env CC was: $CC ---"
+              echo "--- scanning PATH for an ARM/AArch64 cross compiler ---"
+              PICKED=""
+              for cand in $(compgen -c | grep -i -- "-gcc$" | sort -u); do
+                machine=$("$cand" -dumpmachine 2>/dev/null || true)
+                echo "candidate: $cand -> $machine"
+                case "$machine" in
+                  *arm*|*aarch64*)
+                    if [ -z "$PICKED" ]; then PICKED="$cand"; fi
+                    ;;
+                esac
+              done
+              CC="$PICKED"
+              echo "--- Selected CC=$CC ---"
               if [ -z "$CC" ]; then
-                echo "Could not find any cross compiler. PATH was: $PATH"
+                echo "No ARM/AArch64 cross compiler found on PATH."
+                echo "Full PATH: $PATH"
+                echo "Every *gcc* on PATH:"
+                compgen -c | grep -i gcc | sort -u
                 exit 1
               fi
               cd /root/workspace/Calculator
