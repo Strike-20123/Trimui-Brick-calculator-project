@@ -1,21 +1,41 @@
+# Brick Calculator -- deliberately boring Makefile.
+# Uses ">" instead of tabs for recipe lines, so copy-pasting can't break it.
 .RECIPEPREFIX = >
-CC ?= gcc
-SDL2_CFLAGS := $(shell pkg-config --cflags sdl2 SDL2_ttf 2>/dev/null || sdl2-config --cflags)
-SDL2_LIBS   := $(shell pkg-config --libs sdl2 SDL2_ttf 2>/dev/null || sdl2-config --libs) -lm
 
-SRC := src/main.c
-BIN := calculator
-HOSTBIN := calculator-host
+CC         ?= gcc
+PKG_CONFIG ?= pkg-config
 
-.PHONY: all host clean
+TARGET := calculator
+SRCS   := main.c
+OBJS   := $(SRCS:.c=.o)
 
-all: $(BIN)
+SDL_CFLAGS := $(shell $(PKG_CONFIG) --cflags sdl2 2>/dev/null)
+SDL_LIBS   := $(shell $(PKG_CONFIG) --libs sdl2 2>/dev/null)
 
-$(BIN): $(SRC)
->$(CC) -O2 -Wall $(SDL2_CFLAGS) $(SRC) -o $(BIN) $(SDL2_LIBS)
+ifeq ($(strip $(SDL_LIBS)),)
+SDL_LIBS := -lSDL2
+endif
 
-host: $(SRC)
->$(CC) -O2 -Wall $(SDL2_CFLAGS) $(SRC) -o $(HOSTBIN) $(SDL2_LIBS)
+CFLAGS  ?= -O2 -pipe
+CFLAGS  += -std=gnu99 -Wall -Wextra $(SDL_CFLAGS)
+LDLIBS  := $(SDL_LIBS) -lm
+
+DISTDIR ?= ../dist/Calculator
+
+.PHONY: all dist clean
+
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+> $(CC) $(OBJS) -o $@ $(LDFLAGS) $(LDLIBS)
+
+%.o: %.c
+> $(CC) $(CFLAGS) -c $< -o $@
+
+dist: $(TARGET)
+> mkdir -p $(DISTDIR)
+> cp $(TARGET) launch.sh config.json $(DISTDIR)/
+> chmod 755 $(DISTDIR)/$(TARGET) $(DISTDIR)/launch.sh
 
 clean:
->rm -f $(BIN) $(HOSTBIN)
+> rm -f $(OBJS) $(TARGET)
