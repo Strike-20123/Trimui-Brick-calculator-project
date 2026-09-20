@@ -1,0 +1,38 @@
+name: Build Calculator
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Fetch the TrimUI (tg5040) cross toolchain
+        run: git clone --depth 1 https://github.com/shauninman/union-tg5040-toolchain toolchain
+
+      - name: Stage the project inside the toolchain's workspace
+        run: |
+          mkdir -p toolchain/workspace
+          cp -r Calculator toolchain/workspace/Calculator
+
+      - name: Build the toolchain image
+        working-directory: toolchain
+        run: docker build -t tg5040-toolchain .
+
+      - name: Cross-compile the calculator
+        run: |
+          docker run --rm -v "${{ github.workspace }}/toolchain/workspace:/root/workspace" \
+            tg5040-toolchain bash -lc "cd ~/workspace/Calculator && make"
+
+      - name: Confirm we produced an aarch64 binary
+        run: file toolchain/workspace/Calculator/calculator
+
+      - name: Upload the finished app folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: Calculator
+          path: toolchain/workspace/Calculator/
