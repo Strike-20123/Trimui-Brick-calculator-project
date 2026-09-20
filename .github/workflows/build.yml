@@ -1,71 +1,61 @@
-name: Build Calculator
+name: Build
 
 on:
   push:
+    branches: [ main ]
+  pull_request:
   workflow_dispatch:
 
 jobs:
   build:
+    name: Build for TrimUI Brick (aarch64)
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout this repo
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Fetch the TrimUI (tg5040) cross toolchain
-        run: git clone --depth 1 https://github.com/shauninman/union-tg5040-toolchain toolchain
+      # Builds inside a real aarch64 Debian container under QEMU.
+      # Nothing is cross-compiled, so there is no cross toolchain to detect,
+      # no dpkg --add-architecture, and no sources.list surgery to get wrong.
+      # Bullseye is used on purpose: its glibc (2.31) is old enough that the
+      # binary will load on the Brick's firmware.
+      - name: Build in aarch64 container
+        uses: uraimo/run-on-arch-action@v2
+        with:
+          arch: aarch64
+          distro: bullseye
+          githubToken: ${{ github.token }}
 
-      - name: Stage the project inside the toolchain's workspace
-        run: |
-          mkdir -p toolchain/workspace
-          cp -r Calculator toolchain/workspace/Calculator
+          dockerRunArgs: |
+            --volume "${PWD}:/work"
 
-      - name: Build the toolchain image
-        working-directory: toolchain
-        run: docker build -t tg5040-toolchain .
+          install: |
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq
+            apt-get install -y --no-install-recommends \
+              build-essential \
+              pkg-config \
+              libsdl2-dev
 
-      - name: Cross-compile the calculator
-        run: |
-          set -e
-          docker run --rm -v "${{ github.workspace }}/toolchain/workspace:/root/workspace" \
-            tg5040-toolchain bash -lc '
-              set -e
-              for f in ~/.bashrc ~/.bash_profile /setup-env.sh /root/setup-env.sh /opt/setup-env.sh; do
-                [ -f "$f" ] && . "$f"
-              done
-              echo "--- env CC was: $CC ---"
-              echo "--- scanning PATH for an ARM/AArch64 cross compiler ---"
-              PICKED=""
-              for cand in $(compgen -c | grep -i -- "-gcc$" | sort -u); do
-                machine=$("$cand" -dumpmachine 2>/dev/null || true)
-                echo "candidate: $cand -> $machine"
-                case "$machine" in
-                  *arm*|*aarch64*)
-                    if [ -z "$PICKED" ]; then PICKED="$cand"; fi
-                    ;;
-                esac
-              done
-              CC="$PICKED"
-              echo "--- Selected CC=$CC ---"
-              if [ -z "$CC" ]; then
-                echo "No ARM/AArch64 cross compiler found on PATH."
-                echo "Full PATH: $PATH"
-                echo "Every *gcc* on PATH:"
-                compgen -c | grep -i gcc | sort -u
-                exit 1
-              fi
-              cd /root/workspace/Calculator
-              make CC="$CC"
-              test -f calculator || { echo "make finished but no calculator binary was produced"; exit 1; }
-              file calculator
-            '
+          run: |
+            set -e
+            cd /work/Calculator
+            make clean
+            make
+            make dist
+            echo "--- built binary ---"
+            ls -l calculator
+            readelf -h calculator | grep -E 'Class|Machine'
+            echo "--- shared libraries it expects ---"
+            readelf -d calculator | grep NEEDED
 
-      - name: Confirm we produced an aarch64 binary
-        run: |
-          test -f toolchain/workspace/Calculator/calculator
-          file toolchain/workspace/Calculator/calculator
+      - name: Fix file ownership
+        run: sudo chown -R "$USER:$USER" dist
 
-      - name: Upload the finished app folder
+      - name: Upload build
         uses: actions/upload-artifact@v4
         with:
-          name: Calculator
-          path: toolchain/workspace/Calculator/
+          name: BrickCalculator
+          path: dist/
+          if-no-files-found: error
