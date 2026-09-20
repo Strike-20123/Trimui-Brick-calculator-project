@@ -29,13 +29,17 @@ jobs:
             set -e
             export DEBIAN_FRONTEND=noninteractive
 
-            # bullseye-security 404s on several mirrors because the pocket gets
-            # re-rolled and the cached index points at packages that are gone.
-            # We only need to compile, so remove it rather than fight it.
-            sed -i '/security/d' /etc/apt/sources.list
-            rm -f /etc/apt/sources.list.d/*security* || true
+            # Debian 11 reached end of life in Aug 2026 and has moved to
+            # archive.debian.org. The normal mirrors now 404 on bullseye-security.
+            cat > /etc/apt/sources.list <<'SOURCES'
+            deb http://archive.debian.org/debian bullseye main
+            deb http://archive.debian.org/debian-security bullseye-security main
+            SOURCES
+            rm -f /etc/apt/sources.list.d/*.list || true
 
-            echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/99retries
+            # The archive's Release files are past their Valid-Until date by design
+            echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99archive
+            echo 'Acquire::Retries "5";' >> /etc/apt/apt.conf.d/99archive
 
             apt-get update
             apt-get install -y --no-install-recommends \
