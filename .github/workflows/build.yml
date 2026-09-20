@@ -15,11 +15,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Builds inside a real aarch64 Debian container under QEMU.
-      # Nothing is cross-compiled, so there is no cross toolchain to detect,
-      # no dpkg --add-architecture, and no sources.list surgery to get wrong.
-      # Bullseye is used on purpose: its glibc (2.31) is old enough that the
-      # binary will load on the Brick's firmware.
       - name: Build in aarch64 container
         uses: uraimo/run-on-arch-action@v2
         with:
@@ -31,8 +26,18 @@ jobs:
             --volume "${PWD}:/work"
 
           install: |
+            set -e
             export DEBIAN_FRONTEND=noninteractive
-            apt-get update -qq
+
+            # bullseye-security 404s on several mirrors because the pocket gets
+            # re-rolled and the cached index points at packages that are gone.
+            # We only need to compile, so remove it rather than fight it.
+            sed -i '/security/d' /etc/apt/sources.list
+            rm -f /etc/apt/sources.list.d/*security* || true
+
+            echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/99retries
+
+            apt-get update
             apt-get install -y --no-install-recommends \
               build-essential \
               pkg-config \
