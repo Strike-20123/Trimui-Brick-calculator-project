@@ -7,9 +7,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    name: Build for TrimUI Brick (aarch64)
+  # Preferred: older glibc (2.31), most likely to run on the Brick.
+  # Bullseye is EOL so everything comes from archive.debian.org.
+  bullseye:
+    name: Build (bullseye / glibc 2.31)
     runs-on: ubuntu-latest
+    continue-on-error: true
 
     steps:
       - name: Checkout
@@ -29,23 +32,21 @@ jobs:
             set -e
             export DEBIAN_FRONTEND=noninteractive
 
-            # Debian 11 reached end of life in Aug 2026 and has moved to
-            # archive.debian.org. The normal mirrors now 404 on bullseye-security.
+            # Debian 11 is EOL and lives on archive.debian.org now.
+            # There is no debian-security tree there for bullseye; the final
+            # point release folded those updates into main, so main is enough.
             cat > /etc/apt/sources.list <<'SOURCES'
             deb http://archive.debian.org/debian bullseye main
-            deb http://archive.debian.org/debian-security bullseye-security main
             SOURCES
             rm -f /etc/apt/sources.list.d/*.list || true
 
-            # The archive's Release files are past their Valid-Until date by design
-            echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99archive
-            echo 'Acquire::Retries "5";' >> /etc/apt/apt.conf.d/99archive
+            # Archived Release files are past Valid-Until by design
+            printf 'Acquire::Check-Valid-Until "false";\nAcquire::Retries "5";\n' \
+              > /etc/apt/apt.conf.d/99archive
 
             apt-get update
             apt-get install -y --no-install-recommends \
-              build-essential \
-              pkg-config \
-              libsdl2-dev
+              build-essential pkg-config libsdl2-dev
 
           run: |
             set -e
@@ -55,8 +56,6 @@ jobs:
             make dist
             echo "--- built binary ---"
             ls -l calculator
-            readelf -h calculator | grep -E 'Class|Machine'
-            echo "--- shared libraries it expects ---"
             readelf -d calculator | grep NEEDED
 
       - name: Fix file ownership
@@ -65,6 +64,53 @@ jobs:
       - name: Upload build
         uses: actions/upload-artifact@v4
         with:
-          name: BrickCalculator
+          name: BrickCalculator-bullseye
+          path: dist/
+          if-no-files-found: error
+
+  # Fallback: current stable, healthy mirrors, but newer glibc (2.36).
+  bookworm:
+    name: Build (bookworm / glibc 2.36)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build in aarch64 container
+        uses: uraimo/run-on-arch-action@v2
+        with:
+          arch: aarch64
+          distro: bookworm
+          githubToken: ${{ github.token }}
+
+          dockerRunArgs: |
+            --volume "${PWD}:/work"
+
+          install: |
+            set -e
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update
+            apt-get install -y --no-install-recommends \
+              build-essential pkg-config libsdl2-dev
+
+          run: |
+            set -e
+            cd /work/Calculator
+            make clean
+            make
+            make dist
+            echo "--- built binary ---"
+            ls -l calculator
+            readelf -d calculator | grep NEEDED
+
+      - name: Fix file ownership
+        run: sudo chown -R "$USER:$USER" dist
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: BrickCalculator-bookworm
           path: dist/
           if-no-files-found: error
