@@ -26,7 +26,7 @@ jobs:
       - name: Cross-compile the calculator
         run: |
           docker run --rm -v "${{ github.workspace }}/toolchain/workspace:/root/workspace" \
-            tg5040-toolchain bash -lc "cd ~/workspace/Calculator && make CC=aarch64-linux-gnu-gcc"
+            tg5040-toolchain bash -lc "cd ~/workspace/Calculator && make"
 
       - name: Confirm we produced an aarch64 binary
         run: file toolchain/workspace/Calculator/calculator
