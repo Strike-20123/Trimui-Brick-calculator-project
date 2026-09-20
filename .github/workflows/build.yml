@@ -3,16 +3,24 @@ name: Build
 on:
   push:
     branches: [ main ]
-  pull_request:
   workflow_dispatch:
 
 jobs:
-  # Preferred: older glibc (2.31), most likely to run on the Brick.
-  # Bullseye is EOL so everything comes from archive.debian.org.
-  bullseye:
-    name: Build (bullseye / glibc 2.31)
+  build:
+    name: Build (${{ matrix.label }})
     runs-on: ubuntu-latest
     continue-on-error: true
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: bullseye
+            label: bullseye-glibc2.31
+          - distro: ubuntu20.04
+            label: ubuntu2004-glibc2.31
+          - distro: ubuntu18.04
+            label: ubuntu1804-glibc2.27
 
     steps:
       - name: Checkout
@@ -22,7 +30,7 @@ jobs:
         uses: uraimo/run-on-arch-action@v2
         with:
           arch: aarch64
-          distro: bullseye
+          distro: ${{ matrix.distro }}
           githubToken: ${{ github.token }}
 
           dockerRunArgs: |
@@ -32,19 +40,23 @@ jobs:
             set -e
             export DEBIAN_FRONTEND=noninteractive
 
-            # Debian 11 is EOL and lives on archive.debian.org now.
-            # There is no debian-security tree there for bullseye; the final
-            # point release folded those updates into main, so main is enough.
-            cat > /etc/apt/sources.list <<'SOURCES'
-            deb http://archive.debian.org/debian bullseye main
-            SOURCES
-            rm -f /etc/apt/sources.list.d/*.list || true
+            # Bullseye is EOL: repoint at the archive and stop apt rejecting it
+            # over expired signatures and past-due Valid-Until dates.
+            if grep -q bullseye /etc/os-release 2>/dev/null; then
+              rm -f /etc/apt/sources.list.d/*.list || true
+              echo 'deb [trusted=yes] http://archive.debian.org/debian bullseye main' \
+                > /etc/apt/sources.list
+              printf 'Acquire::Check-Valid-Until "false";\nAcquire::AllowInsecureRepositories "true";\nAcquire::Retries "5";\n' \
+                > /etc/apt/apt.conf.d/99archive
+            fi
 
-            # Archived Release files are past Valid-Until by design
-            printf 'Acquire::Check-Valid-Until "false";\nAcquire::Retries "5";\n' \
-              > /etc/apt/apt.conf.d/99archive
+            # Old Ubuntu releases get moved off the main mirror; retry there.
+            apt-get update || {
+              sed -i 's|ports.ubuntu.com/ubuntu-ports|old-releases.ubuntu.com/ubuntu-ports|g' \
+                /etc/apt/sources.list
+              apt-get update
+            }
 
-            apt-get update
             apt-get install -y --no-install-recommends \
               build-essential pkg-config libsdl2-dev
 
@@ -54,8 +66,9 @@ jobs:
             make clean
             make
             make dist
-            echo "--- built binary ---"
-            ls -l calculator
+            echo "--- highest glibc symbol this binary needs ---"
+            objdump -T calculator | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
+            echo "--- shared libraries ---"
             readelf -d calculator | grep NEEDED
 
       - name: Fix file ownership
@@ -64,53 +77,6 @@ jobs:
       - name: Upload build
         uses: actions/upload-artifact@v4
         with:
-          name: BrickCalculator-bullseye
-          path: dist/
-          if-no-files-found: error
-
-  # Fallback: current stable, healthy mirrors, but newer glibc (2.36).
-  bookworm:
-    name: Build (bookworm / glibc 2.36)
-    runs-on: ubuntu-latest
-    continue-on-error: true
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Build in aarch64 container
-        uses: uraimo/run-on-arch-action@v2
-        with:
-          arch: aarch64
-          distro: bookworm
-          githubToken: ${{ github.token }}
-
-          dockerRunArgs: |
-            --volume "${PWD}:/work"
-
-          install: |
-            set -e
-            export DEBIAN_FRONTEND=noninteractive
-            apt-get update
-            apt-get install -y --no-install-recommends \
-              build-essential pkg-config libsdl2-dev
-
-          run: |
-            set -e
-            cd /work/Calculator
-            make clean
-            make
-            make dist
-            echo "--- built binary ---"
-            ls -l calculator
-            readelf -d calculator | grep NEEDED
-
-      - name: Fix file ownership
-        run: sudo chown -R "$USER:$USER" dist
-
-      - name: Upload build
-        uses: actions/upload-artifact@v4
-        with:
-          name: BrickCalculator-bookworm
+          name: BrickCalculator-${{ matrix.label }}
           path: dist/
           if-no-files-found: error
